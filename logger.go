@@ -40,17 +40,23 @@ func (cl *CustomLogger) Debug(f string, a ...any) {
 func (cl *CustomLogger) ErrP(f string, a ...any) {
 	m := fmt.Sprintf(f, a...)
 	cl.Err("%s", m)
-	fmt.Printf("\033[31m%s\033[0m\n", m)
+	fmt.Printf("\033[31m** %s **\033[0m\n", m)
 }
 
 func (cl *CustomLogger) LogP(f string, a ...any) {
 	m := fmt.Sprintf(f, a...)
 	cl.Log("%s", m)
-	fmt.Printf("\033[32m** %s **\033[0m\n", m)
+	fmt.Printf("\033[36m%s\033[0m\n", m)
+}
+
+func (cl *CustomLogger) LogCP(f string, c string, a ...any) {
+	m := fmt.Sprintf(f, a...)
+	cl.Log("%s", m)
+	fmt.Printf("\033[%s%s\033[0m", c, m)
 }
 
 func (cl *CustomLogger) DebugP(f string, a ...any) {
 	m := fmt.Sprintf(f, a...)
 	cl.Debug("%s", m)
-	fmt.Printf("\033[90m %s\033[0m\n", m)
+	fmt.Printf("\033[90m%s\033[0m\n", m)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -76,11 +77,11 @@ func InitLocalModel(rawMode string) error {
 		compiledPrompt.Write(modeContent)
 	}
 
-	modelfileString := fmt.Sprintf("FROM %s\nSYSTEM \"\"\"\n%s\n\"\"\"", BASE_MODEL, compiledPrompt.String())
 	payload := map[string]any{
-		"name":      MODEL,
-		"modelfile": modelfileString,
-		"stream":    false,
+		"model":  MODEL,
+		"from":   BASE_MODEL,
+		"system": compiledPrompt.String(),
+		"stream": false,
 	}
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -93,7 +94,8 @@ func InitLocalModel(rawMode string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ollama custom model compilation failed with status: %d", resp.StatusCode)
+		errBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("ollama custom model compilation failed (%d): %s", resp.StatusCode, errBody)
 	}
 
 	Log.Debug("Transient model %q initialized successfully with compiled prompts.", MODEL)

@@ -106,12 +106,13 @@ func main() {
 		Log.ErrP("Model Initialization Failed: %v", err)
 		os.Exit(1)
 	}
+	history := []Message{}
 
-	Log.LogP("--- Qwen Assistant Active ---")
+	Log.LogP("[System] Dancode assistant ready")
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		Log.LogP("\n❯ ")
+		Log.LogCP("\n ❯ ", "0m")
 		if !scanner.Scan() {
 			break
 		}
@@ -129,8 +130,8 @@ func main() {
 			continue
 		}
 
+		Log.Log("User Input: %s\n", input)
 		history = append(history, Message{Role: "user", Content: input})
-		Log.LogP("User Input: %s", input)
 
 		for {
 			response, err := queryOllama(history)
@@ -142,9 +143,9 @@ func main() {
 
 			if len(response.Message.ToolCalls) == 0 {
 				if response.Message.Content != "" {
-					Log.LogP("\n%s\n", response.Message.Content)
+					Log.LogCP("\n%s\n", "32m", response.Message.Content)
 					totalUsed := response.PromptEvalCount + response.EvalCount
-					Log.DebugP("\n\033[90m[Context: %d/%d tokens | Input: %d | Output: %d]\033[0m\n", totalUsed, CONTEXT_LIMIT, response.PromptEvalCount, response.EvalCount)
+					Log.DebugP("[Context] %d/%d tokens | Input: %d | Output: %d", totalUsed, CONTEXT_LIMIT, response.PromptEvalCount, response.EvalCount)
 					response.Message.Role = "assistant"
 					history = append(history, response.Message)
 				} else {
