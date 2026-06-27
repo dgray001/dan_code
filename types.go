@@ -19,11 +19,11 @@ type FunctionCall struct {
 }
 
 type ChatRequest struct {
-	Model    string         `json:"model"`
-	Messages []Message      `json:"messages"`
-	Tools    []any          `json:"tools,omitempty"`
-	Stream   bool           `json:"stream"`
-	Options  map[string]any `json:"options,omitempty"`
+	Model    string           `json:"model"`
+	Messages []Message        `json:"messages"`
+	Tools    []map[string]any `json:"tools,omitempty"`
+	Stream   bool             `json:"stream"`
+	Options  map[string]any   `json:"options,omitempty"`
 }
 
 type ChatResponse struct {

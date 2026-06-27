@@ -1,1 +1,1 @@
-v0.1b: Fix logger
+v0.1c: Tool registry

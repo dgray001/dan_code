@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
 	"fmt"
@@ -12,8 +12,8 @@ type CustomLogger struct {
 
 var Log *CustomLogger
 
-func initLogger() {
-	file, err := os.OpenFile("gate-debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+func InitLogger() {
+	file, err := os.OpenFile("debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Println("\033[31m[Error] Could not open gate-debug.log, logging to stderr only.\033[0m")
 		Log = &CustomLogger{fileLog: log.New(os.Stderr, "", log.LstdFlags)}
