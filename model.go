@@ -30,6 +30,8 @@ const (
 	ModeNone         Mode = ""
 )
 
+var modelsWithPrompts = []string{"qwen"}
+
 func (m Mode) modeValid() bool {
 	switch m {
 	case ModeAsk, ModeCode, ModeArchitect, ModeDebug, ModeOrchestrator, ModeNone:
@@ -67,8 +69,21 @@ func InitLocalModel(rawMode string) error {
 	var compiledPrompt strings.Builder
 	compiledPrompt.Write(systemContent)
 
+	normalizedModel := strings.ToLower(BASE_MODEL)
+	for _, m := range modelsWithPrompts {
+		if strings.Contains(normalizedModel, m) {
+			modelPath := fmt.Sprintf("prompts/model_%s.md", m)
+			modelContent, err := os.ReadFile(modelPath)
+			if err != nil {
+				return fmt.Errorf("model prompt file missing for %s at %s: %v", m, modelPath, err)
+			}
+			compiledPrompt.WriteString("\n\n")
+			compiledPrompt.Write(modelContent)
+		}
+	}
+
 	if mode != ModeNone {
-		filename := string(mode) + ".md"
+		filename := "mode_" + string(mode) + ".md"
 		modePath := filepath.Join(PROMPTS_DIR, filename)
 		modeContent, err := os.ReadFile(modePath)
 		if err != nil {

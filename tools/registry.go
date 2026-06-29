@@ -73,12 +73,12 @@ func ExecuteTool(name string, args map[string]any) string {
 		return fmt.Sprintf("Error: Tool '%s' is not supported", name)
 	}
 	argsJSON, _ := json.Marshal(args)
-	Log.LogP("[Tool Invoke] %s -> Args: %s\n", tool.Name, string(argsJSON))
+	Log.DebugP("[Tool] Invoked %s -> Args: %s", tool.Name, string(argsJSON))
 	output, err := tool.Handler(args)
 	if err != nil {
-		Log.ErrP("[Tool Failure] %s Error: %v\n", tool.Name, err)
+		Log.ErrP("[Tool] %s error: %v", tool.Name, err)
 		return fmt.Sprintf("Error executing tool '%s': %v", tool.Name, err)
 	}
-	Log.Debug("[Tool Success] %s completed execution cleanly.", tool.Name)
+	Log.DebugP("[Tool] %s success:\n%s", tool.Name, output)
 	return output
 }
