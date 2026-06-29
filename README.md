@@ -1,6 +1,4 @@
-v0.1d: Handle streaming and thinking
+v0.1e: Tool output truncated
 
 Plans:
- - loader (show up to n lines of thinking)
- - tool output truncated
  - tool approval logic

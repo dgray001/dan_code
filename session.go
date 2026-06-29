@@ -4,15 +4,14 @@ import (
 	"bytes"
 	. "dan_code/logger"
 	"dan_code/tools"
+	"dan_code/utils"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
-	"syscall"
 	"time"
-	"unsafe"
 )
 
 type Session struct {
@@ -73,7 +72,7 @@ func (s *Session) processMessage(userInput string) {
 		}
 
 		if response.Message.Content != "" {
-			Log.LogP("\n%s\n", response.Message.Content)
+			Log.Log("%s", response.Message.Content)
 			totalUsed := response.PromptEvalCount + response.EvalCount
 			Log.DebugP("[Context: %d/%d tokens | In: %d | Out: %d]", totalUsed, CONTEXT_LIMIT, response.PromptEvalCount, response.EvalCount)
 			response.Message.Role = "assistant"
@@ -204,6 +203,7 @@ func queryOllama(messages []Message) (ChatResponse, error) {
 	startedThinking := false
 	finishedThinking := false
 	displayedThinkingLines := 0
+	startedContent := false
 
 	for {
 		var chunk ChatResponseChunk
@@ -244,6 +244,10 @@ func queryOllama(messages []Message) (ChatResponse, error) {
 				Log.Debug("[Thinking Finished]")
 				finishedThinking = true
 			}
+			if !startedContent {
+				fmt.Print("\n\033[32m")
+				startedContent = true
+			}
 			fmt.Print(chunk.Message.Content)
 			os.Stdout.Sync()
 			fullContent.WriteString(chunk.Message.Content)
@@ -257,6 +261,9 @@ func queryOllama(messages []Message) (ChatResponse, error) {
 	}
 
 	stopSpinnerFunc()
+	if startedContent {
+		fmt.Print("\033[0m\n")
+	}
 	if fullThinking.Len() > 0 {
 		chatResp.Message.Content = fmt.Sprintf("<think>\n%s\n</think>%s", fullThinking.String(), fullContent.String())
 	} else {
@@ -269,7 +276,7 @@ func getLastNLines(str string, n int) ([]string, int) {
 	if str == "" {
 		return nil, 0
 	}
-	termWidth := getTerminalWidth()
+	termWidth := utils.GetTerminalWidth()
 	maxAllowedLen := max(termWidth-15, min(10, termWidth))
 	rawLines := strings.Split(str, "\n")
 	var lines []string
@@ -286,26 +293,6 @@ func getLastNLines(str string, n int) ([]string, int) {
 		return lines, len(lines)
 	}
 	return lines[len(lines)-n:], n
-}
-
-func getTerminalWidth() int {
-	type winsize struct {
-		Row    uint16
-		Col    uint16
-		Xpixel uint16
-		Ypixel uint16
-	}
-	ws := &winsize{}
-	// syscall.TIOCGWINSZ gets window size of system stdout
-	retCode, _, _ := syscall.Syscall(syscall.SYS_IOCTL,
-		uintptr(syscall.Stdout),
-		uintptr(syscall.TIOCGWINSZ),
-		uintptr(unsafe.Pointer(ws)),
-	)
-	if int(retCode) == -1 || ws.Col == 0 {
-		return 60
-	}
-	return int(ws.Col)
 }
 
 func truncateOrScrollLine(line string, maxLen int) string {

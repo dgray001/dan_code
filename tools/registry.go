@@ -2,9 +2,13 @@ package tools
 
 import (
 	. "dan_code/logger"
+	"dan_code/utils"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
+
+const maxOutputLines = 3
 
 type ToolHandler = func(args map[string]any) (string, error)
 
@@ -79,6 +83,30 @@ func ExecuteTool(name string, args map[string]any) string {
 		Log.ErrP("[Tool] %s error: %v", tool.Name, err)
 		return fmt.Sprintf("Error executing tool '%s': %v", tool.Name, err)
 	}
-	Log.DebugP("[Tool] %s success:\n%s", tool.Name, output)
+
+	terminalWidth := utils.GetTerminalWidth()
+	logPrefix := fmt.Sprintf("[Tool] %s success: ", tool.Name)
+	availableWidth := terminalWidth - len(logPrefix)
+
+	lines := strings.Split(output, "\n")
+	if len(lines) <= 1 {
+		truncatedOutput := output
+		if len(output) > availableWidth {
+			truncatedOutput = output[:availableWidth-3] + "..." // -3 for "..."
+		}
+		Log.DebugP("%s%s", logPrefix, truncatedOutput)
+	} else {
+		Log.DebugP("[Tool] %s success:", tool.Name)
+		for i, line := range lines {
+			if i >= maxOutputLines-1 {
+				remainingLines := len(lines) - i
+				if remainingLines > 0 {
+					Log.DebugP("... (and %d more lines)", remainingLines)
+				}
+				break
+			}
+			Log.DebugP("%s", line)
+		}
+	}
 	return output
 }
