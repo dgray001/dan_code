@@ -6,6 +6,7 @@ import (
 	"dan_code/tools"
 	"dan_code/utils"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"time"
 )
+
+var ErrUserInterruptedStream = errors.New("User interrupted the stream")
 
 type Session struct {
 	History []Message
@@ -27,15 +30,30 @@ func newSession() *Session {
 func (s *Session) processMessage(userInput string) {
 	s.History = append(s.History, Message{Role: "user", Content: userInput})
 	Log.Log("User Input: %s\n", userInput)
+	promptEvalCount := 0
+	evalCount := 0
 
 	for {
 		response, err := queryOllama(s.History)
-		if err != nil {
+		promptEvalCount = response.PromptEvalCount
+		evalCount = response.EvalCount
+		if errors.Is(err, ErrUserInterruptedStream) {
+			Log.LogP("[System] User interrupted stream")
+			if response.Message.Content != "" {
+				response.Message.Role = "assistant"
+				s.History = append(s.History, response.Message)
+			}
+			s.History = append(s.History, Message{
+				Role:    "user",
+				Content: "--- Interrupted by user. Stop your previous train of thought. ---",
+			})
+			break
+		} else if err != nil {
 			Log.ErrP("Fatal Engine Error: %v\n", err)
 			if len(s.History) > 0 {
 				s.History = s.History[:len(s.History)-1]
 			}
-			return
+			break
 		}
 		Log.Debug("Raw model output: %q\n", response.Message.Content)
 
@@ -73,8 +91,6 @@ func (s *Session) processMessage(userInput string) {
 
 		if response.Message.Content != "" {
 			Log.Log("%s", response.Message.Content)
-			totalUsed := response.PromptEvalCount + response.EvalCount
-			Log.DebugP("[Context: %d/%d tokens | In: %d | Out: %d]", totalUsed, CONTEXT_LIMIT, response.PromptEvalCount, response.EvalCount)
 			response.Message.Role = "assistant"
 			s.History = append(s.History, response.Message)
 		} else {
@@ -82,12 +98,22 @@ func (s *Session) processMessage(userInput string) {
 			break
 		}
 	}
+	Log.DebugP("[Context: %d/%d tokens | In: %d | Out: %d]", promptEvalCount+evalCount, CONTEXT_LIMIT, promptEvalCount, evalCount)
 }
 
 func (s *Session) executeTool(tool ToolCall) bool {
 	if tool.Function.Name == "finish_task" {
 		return true
 	}
+	/*approved, err := tools.PromptForApproval(tool)
+	  if err != nil {
+	      Log.ErrP("Failed to get approval for tool call: %v", err)
+	      return false
+	  }
+	  if !approved {
+	      Log.Log("[System] Tool call rejected by user.")
+	      return false
+	  }*/
 	toolOutput := tools.ExecuteTool(tool.Function.Name, tool.Function.Arguments)
 	s.History = append(s.History, Message{
 		Role:       "tool",
@@ -98,36 +124,45 @@ func (s *Session) executeTool(tool ToolCall) bool {
 	return false
 }
 
-func inlineToolCalls(message string) []FunctionCall {
+func inlineToolCalls(m string) []FunctionCall {
 	var validCalls []FunctionCall
-	contentClean := strings.TrimSpace(message)
-	if strings.HasPrefix(contentClean, "```json") {
-		contentClean = strings.ReplaceAll(contentClean, "```json", "")
-		contentClean = strings.ReplaceAll(contentClean, "```", "")
-		contentClean = strings.TrimSpace(contentClean)
+	mTrim := strings.TrimSpace(m)
+
+	if EnableCompleteOnlyInlineParsing {
+		content := strings.TrimPrefix(mTrim, "```json")
+		content = strings.TrimSuffix(content, "```")
+		content = strings.TrimSpace(content)
+		processJSONBlock(mTrim, &validCalls)
+		return validCalls
 	}
-	if strings.HasPrefix(contentClean, "{") {
+
+	potentialBlocks := utils.ExtractBalancedJSONBlocks(mTrim)
+	for _, block := range potentialBlocks {
+		processJSONBlock(block, &validCalls)
+	}
+	return validCalls
+}
+
+func processJSONBlock(jsonStr string, validCalls *[]FunctionCall) {
+	if strings.HasPrefix(jsonStr, "{") {
 		var forcedCall InlineFunctionCall
-		err := json.Unmarshal([]byte(contentClean), &forcedCall)
-		if err == nil && forcedCall.valid() {
-			validCalls = append(validCalls, forcedCall.toCall())
+		if err := json.Unmarshal([]byte(jsonStr), &forcedCall); err == nil && forcedCall.valid() {
+			*validCalls = append(*validCalls, forcedCall.toCall())
 		} else {
-			Log.Debug("JSON parsing failed for potential forced tool call: %v", err)
+			Log.Debug("JSON parsing failed for forced tool call: %v", err)
 		}
-	} else if strings.HasPrefix(contentClean, "[") {
+	} else if strings.HasPrefix(jsonStr, "[") {
 		var rawCalls []InlineFunctionCall
-		errArray := json.Unmarshal([]byte(contentClean), &rawCalls)
-		if errArray == nil {
+		if err := json.Unmarshal([]byte(jsonStr), &rawCalls); err == nil {
 			for _, call := range rawCalls {
 				if call.valid() {
-					validCalls = append(validCalls, call.toCall())
+					*validCalls = append(*validCalls, call.toCall())
 				}
 			}
 		} else {
-			Log.Debug("JSON parsing failed for potential forced tool calls: %v", errArray)
+			Log.Debug("JSON parsing failed for forced tool calls: %v", err)
 		}
 	}
-	return validCalls
 }
 
 func queryOllama(messages []Message) (ChatResponse, error) {
@@ -199,6 +234,8 @@ func queryOllama(messages []Message) (ChatResponse, error) {
 
 	var fullContent strings.Builder
 	var fullThinking strings.Builder
+	var runningPromptEval int
+	var runningEval int
 	dec := json.NewDecoder(resp.Body)
 	startedThinking := false
 	finishedThinking := false
@@ -206,6 +243,15 @@ func queryOllama(messages []Message) (ChatResponse, error) {
 	startedContent := false
 
 	for {
+		select {
+		case <-interruptChannel:
+			fmt.Print("\r\033[K")
+			chatResp.Message.Content = fullContent.String()
+			chatResp.PromptEvalCount = runningPromptEval
+			chatResp.EvalCount = runningEval
+			return chatResp, ErrUserInterruptedStream
+		default:
+		}
 		var chunk ChatResponseChunk
 		if err := dec.Decode(&chunk); err == io.EOF {
 			break
@@ -214,6 +260,12 @@ func queryOllama(messages []Message) (ChatResponse, error) {
 			return chatResp, fmt.Errorf("stream decode failure: %w", err)
 		}
 		Log.Debug("%s", fmt.Sprint(chunk))
+		if chunk.PromptEvalCount > 0 {
+			runningPromptEval = chunk.PromptEvalCount
+		}
+		if chunk.EvalCount > 0 {
+			runningEval = chunk.EvalCount
+		}
 
 		if chunk.Message.Thinking != "" {
 			stopSpinnerFunc()
